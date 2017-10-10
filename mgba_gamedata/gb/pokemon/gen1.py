@@ -1,12 +1,12 @@
-from __future__ import print_function
-from mgba_gamedata.types import Struct, Value, List, Character, String
+# -*- coding: utf-8 -*-
+from mgba_gamedata.types import Struct, Value, List, Character, String, Endian
 from mgba_gamedata.gb import GBGame
 
 
 class Gen1CharacterE(Character):
-    width = 1
+    _width = 1
 
-    mapping = [
+    _mapping = [
         # 0x0X
         u'�', u'�', u'�', u'�', u'�', u'�', u'�', u'�',
         u'�', u'�', u'�', u'�', u'�', u'�', u'�', u'�',
@@ -74,48 +74,52 @@ class Gen1CharacterE(Character):
 
 
 class Gen1StringE(String):
-    characters = Gen1CharacterE
-    terminator = u'\x00'
+    _characters = Gen1CharacterE
+    _terminator = u'\x00'
 
 
 class BoxMon(Struct):
     species = Value(width=1, address=0)
-    hp = Value(width=2, address=1)
+    hp = Value(width=2, address=1, endian=Endian.BIG)
     level = Value(width=1, address=3)
     status = Value(width=1, address=4)
     type1 = Value(width=1, address=5)
     type2 = Value(width=1, address=6)
     catch_rate = Value(width=1, address=7)
     moves = List(Value(width=1), 4, address=8)
-    ot_id = Value(width=2, address=12)
-    exp = Value(width=3, address=14)
-    hp_ev = Value(width=2, address=17)
-    attack_ev = Value(width=2, address=19)
-    defense_ev = Value(width=2, address=21)
-    speed_ev = Value(width=2, address=23)
-    special_ev = Value(width=2, address=25)
-    iv = Value(width=2, address=27)
+    ot_id = Value(width=2, address=12, endian=Endian.BIG)
+    exp = Value(width=3, address=14, endian=Endian.BIG)
+    hp_ev = Value(width=2, address=17, endian=Endian.BIG)
+    attack_ev = Value(width=2, address=19, endian=Endian.BIG)
+    defense_ev = Value(width=2, address=21, endian=Endian.BIG)
+    speed_ev = Value(width=2, address=23, endian=Endian.BIG)
+    special_ev = Value(width=2, address=25, endian=Endian.BIG)
+    iv = Value(width=2, address=27, endian=Endian.BIG)
     pp = List(Value(width=1), 4, address=29)
 
 
 class PartyMon(BoxMon):
     level = Value(width=1, address=33)
     box_level = Value(width=1, address=3)
-    max_hp = Value(width=2, address=34)
-    attack = Value(width=2, address=36)
-    defense = Value(width=2, address=38)
-    speed = Value(width=2, address=40)
-    special = Value(width=2, address=42)
+    max_hp = Value(width=2, address=34, endian=Endian.BIG)
+    attack = Value(width=2, address=36, endian=Endian.BIG)
+    defense = Value(width=2, address=38, endian=Endian.BIG)
+    speed = Value(width=2, address=40, endian=Endian.BIG)
+    special = Value(width=2, address=42, endian=Endian.BIG)
 
 
 class RedBlueEParty(Struct):
-    size = 0x194
+    _size = 0x194
 
     _count = Value(width=1, address=0)
 
     nicknames = List(Gen1StringE(11), 6, address=338)
     otNames = List(Gen1StringE(11), 6, address=272)
     pokemon = List(PartyMon(), 6, address=8)
+
+    for i in xrange(6):
+        pokemon[i].nickname = nicknames[i]
+        pokemon[i].otName = otNames[i]
 
     def __len__(self):
         return self._count
@@ -124,12 +128,6 @@ class RedBlueEParty(Struct):
         if index >= self._count:
             raise IndexError
         return self.pokemon[index]
-
-    def instantiate(self, memory, address=0):
-        super(RedBlueEParty, self).instantiate(memory, address)
-        for i in xrange(6):
-            self.pokemon[i].nickname = self.nicknames[i]
-            self.pokemon[i].otName = self.otNames[i]
 
 
 class RedBlueE(GBGame):

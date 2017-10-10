@@ -1,39 +1,36 @@
 import copy
-from mgba_gamedata.memory import Endian
+from cached_property import cached_property
+from mgba_gamedata.memory import Endian, ParentAdapter
 
 
 class Type(object):
-    _memory = None
+    _memory = ParentAdapter()
+    _parent = None
 
     def __init__(self, address=0, segment=None):
-        self.address = address
-        self.segment = segment
+        self._address = address
+        self._segment = segment
 
-    def instantiate(self, memory, address=0):
-        self._memory = memory
-        self.address += address
+    @cached_property
+    def address(self):
+        if self._parent is None:
+            return self._address
+        return self._parent.address + self._address
+
+    def _reparent(self, parent):
+        self._parent = parent
 
 
 class List(Type):
     def __init__(self, element_template, element_count, address=0, segment=None):
         super(List, self).__init__(address, segment)
-        self.size = element_template.size * element_count
+        self._size = element_template._size * element_count
         self._list = []
         for i in xrange(element_count):
             element = copy.copy(element_template)
-            element.address += i * element.size
+            element._address += i * element._size
+            element._reparent(self)
             self._list.append(element)
-
-    def instantiate(self, memory, address=0):
-        super(List, self).instantiate(memory, address)
-        new_list = []
-        for element in self._list:
-            if isinstance(element, Value):
-                return
-            element = copy.copy(element)
-            element.instantiate(memory, self.address)
-            new_list.append(element)
-        self._list = new_list
 
     def __len__(self):
         return len(self._list)
@@ -48,6 +45,11 @@ class List(Type):
     def __setitem__(self, index, value):
         self._list[index] = value
 
+    def _reparent(self, parent):
+        super(List, self)._reparent(parent)
+        for element in self._list:
+            element._reparent(self)
+
 
 class StructType(type):
     def __new__(cls, name, bases, attrs):
@@ -61,11 +63,11 @@ class StructType(type):
                 if isinstance(value, Type):
                     if not isinstance(value, Value):
                         children.append(aname)
-                    offset = value.address + value.size
+                    offset = value._address + value._size
                     if offset > max_offset:
                         max_offset = offset
-            if 'size' not in attrs:
-                attrs['size'] = max_offset
+            if '_size' not in attrs:
+                attrs['_size'] = max_offset
 
         attrs['_children'] = children
         return super(StructType, cls).__new__(cls, name, bases, attrs)
@@ -81,29 +83,29 @@ class Struct(Type):
             self._children.append(name)
             setattr(self, name, field)
 
-    def instantiate(self, memory, address=0):
-        super(Struct, self).instantiate(memory, address)
         for child in self._children:
-            c = getattr(self, child)
-            c = copy.copy(c)
-            c.instantiate(memory, self.address)
-            setattr(self, child, c)
+            getattr(self, child)._reparent(self)
+
+    def _reparent(self, parent):
+        super(Struct, self)._reparent(parent)
+        for child in self._children:
+            getattr(self, child)._reparent(self)
 
 
 class Value(Type):
     def __init__(self, width, address=0, segment=None, endian=Endian.LITTLE, signed=False):
         super(Value, self).__init__(address, segment)
 
-        self.width = width
-        self.size = width
-        self.endian = endian
-        self.signed = signed
+        self._width = width
+        self._size = width
+        self._endian = endian
+        self._signed = signed
 
     def __get__(self, ob, cls=None):
         base = ob.address
-        rawmem = ob._memory[base + self.address:base +self.address + self.width]
+        rawmem = ob._memory[base + self._address:base + self._address + self._width]
         value = 0
-        if self.endian == Endian.LITTLE:
+        if self._endian == Endian.LITTLE:
             i = 0
             for b in rawmem:
                 value |= b << (i * 8)
@@ -112,33 +114,45 @@ class Value(Type):
             for b in rawmem:
                 value <<= 8
                 value |= b
-        if self.signed:
-            m = 0x80 << (8 * (self.width - 1))
+        if self._signed:
+            m = 0x80 << (8 * (self._width - 1))
             if value >= m:
                 value = ~((m << 1) - value - 1)
-        return b
+        return value
 
     def __set__(self, ob, value):
-        raise NotImplementedError
+        base = ob.address
+        if self._endian == Endian.LITTLE:
+            i = 0
+            for i in xrange(self._width):
+                ob._memory[base + self._address + i] = value & 0xFF
+                value >>= 8
+                i += 1
+        else:
+            i = 0
+            for i in xrange(self._width):
+                ob._memory[base + self._address + self._width - i - 1] = value & 0xFF
+                value >>= 8
+                i += 1
 
 
 class Character(Value):
     def __init__(self, address=0, segment=None):
-        super(Character, self).__init__(width=self.width, address=address, segment=segment)
+        super(Character, self).__init__(width=self._width, address=address, segment=segment)
 
     def __get__(self, ob, cls=None):
         c = super(Character, self).__get__(ob, cls)
-        return self.mapping[c]
+        return self._mapping[c]
 
 
 class String(List):
     def __init__(self, length, address=0, segment=None):
-        super(String, self).__init__(self.characters(), length, address=address, segment=segment)
+        super(String, self).__init__(self._characters(), length, address=address, segment=segment)
 
     def __str__(self):
         text = []
         for c in self:
-            if hasattr(self, 'terminator') and c == self.terminator:
+            if hasattr(self, '_terminator') and c == self._terminator:
                 break
             text.append(c)
         return ''.join(text)

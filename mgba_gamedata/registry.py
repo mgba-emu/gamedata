@@ -1,4 +1,3 @@
-import sys
 import venusian
 import mgba_gamedata
 from mgba_gamedata.types import Struct, StructType
@@ -94,8 +93,6 @@ class Platform(object):
 class Game(Struct):
     __metaclass__ = GameType
 
-    _memory = None
-
     def __init__(self, memory=None):
         super(Game, self).__init__()
-        self.instantiate(memory)
+        self._memory = memory

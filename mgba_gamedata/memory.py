@@ -9,3 +9,8 @@ class Adapter(object):
 
     def __setitem__(self, index, value):
         raise NotImplementedError
+
+
+class ParentAdapter(Adapter):
+    def __get__(self, instance, cls):
+        return instance._parent._memory
